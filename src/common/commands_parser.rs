@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 #![deny(warnings)]
 
+use chrono::{DateTime, Utc};
 use clap::ArgMatches;
 use libc::VMADDR_CID_HOST;
 #[cfg(test)]
@@ -114,6 +115,8 @@ pub struct BuildEnclavesArgs {
     pub img_version: Option<String>,
     /// The path to custom metadata JSON file
     pub metadata: Option<String>,
+    /// Build time override for Metadata
+    pub override_time: Option<DateTime<Utc>>,
 }
 
 impl BuildEnclavesArgs {
@@ -161,6 +164,7 @@ impl BuildEnclavesArgs {
             img_name: parse_image_name(args),
             img_version: parse_image_version(args),
             metadata: parse_metadata(args),
+            override_time: parse_override_time(args),
         })
     }
 }
@@ -560,6 +564,13 @@ fn parse_image_version(args: &ArgMatches) -> Option<String> {
 
 fn parse_metadata(args: &ArgMatches) -> Option<String> {
     args.value_of("metadata").map(|val| val.to_string())
+}
+
+fn parse_override_time(args: &ArgMatches) -> Option<DateTime<Utc>> {
+    match args.value_of("override_time").map(|val| val.to_string()) {
+        Some(val) => Some(DateTime::parse_from_rfc3339(&val).unwrap_or(DateTime::UNIX_EPOCH.into()).with_timezone(&Utc)),
+        None => None,
+    }
 }
 
 fn parse_error_code_str(args: &ArgMatches) -> NitroCliResult<String> {

@@ -18,6 +18,7 @@ pub mod utils;
 use aws_nitro_enclaves_image_format::defs::eif_hasher::EifHasher;
 use aws_nitro_enclaves_image_format::utils::eif_reader::EifReader;
 use aws_nitro_enclaves_image_format::{generate_build_info, utils::get_pcrs};
+use chrono::{DateTime, Utc};
 use log::{debug, info};
 use sha2::{Digest, Sha384};
 use std::collections::BTreeMap;
@@ -61,6 +62,7 @@ pub fn build_enclaves(args: BuildEnclavesArgs) -> NitroCliResult<()> {
         &args.img_name,
         &args.img_version,
         &args.metadata,
+        &args.override_time,
     )
     .map_err(|e| e.add_subaction("Failed to build EIF from docker".to_string()))?;
     Ok(())
@@ -76,6 +78,7 @@ pub fn build_from_docker(
     img_name: &Option<String>,
     img_version: &Option<String>,
     metadata_path: &Option<String>,
+    override_time: &Option<DateTime<Utc>>,
 ) -> NitroCliResult<(File, BTreeMap<String, String>)> {
     let blobs_path =
         blobs_path().map_err(|e| e.add_subaction("Failed to retrieve blobs path".to_string()))?;
@@ -118,7 +121,7 @@ pub fn build_from_docker(
     };
 
     let kernel_path = format!("{}/{}", blobs_path, kernel_image_name);
-    let build_info = generate_build_info!(&format!("{}.config", kernel_path)).map_err(|e| {
+    let build_info = generate_build_info!(&format!("{}.config", kernel_path), *override_time).map_err(|e| {
         new_nitro_cli_failure!(
             &format!("Could not generate build info: {:?}", e),
             NitroCliErrorEnum::EifBuildingError
@@ -758,6 +761,12 @@ macro_rules! create_app {
                         Arg::with_name("metadata")
                             .long("metadata")
                             .help("Path to JSON containing the custom metadata provided by the user.")
+                            .takes_value(true),
+                    )
+                    .arg(
+                        Arg::with_name("override_time")
+                            .long("override_time")
+                            .help("Time in RFC3339 format to override build time in metadata with.")
                             .takes_value(true),
                     ),
             )
