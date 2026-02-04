@@ -130,7 +130,11 @@ pub fn build_from_docker(
     let mut docker2eif = enclave_build::Docker2Eif::new(
         docker_uri.to_string(),
         format!("{blobs_path}/init"),
-        format!("{blobs_path}/nsm.ko"),
+        vec![enclave_build::ModuleEntry {
+            name: String::from("nsm"),
+            path: std::path::PathBuf::from(format!("{blobs_path}/nsm.ko")),
+            dependencies: vec![],
+        }],
         kernel_path,
         cmdline.trim().to_string(),
         format!("{blobs_path}/linuxkit"),
