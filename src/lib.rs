@@ -16,6 +16,8 @@ pub mod enclave_proc_comm;
 pub mod utils;
 /// The module for querying RPM repositories.
 pub mod rpm_repo;
+/// The module for extracting kernel binaries from RPM packages.
+pub mod kernel_extract;
 
 use aws_nitro_enclaves_image_format::defs::eif_hasher::EifHasher;
 use aws_nitro_enclaves_image_format::utils::eif_reader::EifReader;

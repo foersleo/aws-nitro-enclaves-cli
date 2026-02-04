@@ -14,7 +14,8 @@ use std::os::unix::net::UnixStream;
 
 use nitro_cli::common::commands_parser::{
     BuildEnclavesArgs, ConsoleArgs, DescribeEnclavesArgs, DownloadKernelArgs, EmptyArgs,
-    ExplainArgs, ListPackagesArgs, PcrArgs, RunEnclavesArgs, SignEifArgs, TerminateEnclavesArgs,
+    ExplainArgs, ListPackagesArgs, PcrArgs, RunEnclavesArgs, SignEifArgs,
+    TerminateEnclavesArgs,
 };
 use nitro_cli::common::document_errors::explain_error;
 use nitro_cli::common::json_output::{EnclaveDescribeInfo, EnclaveRunInfo, EnclaveTerminateInfo};
@@ -46,7 +47,6 @@ const FILE_PCR_STR: &str = "File PCR";
 const SIGN_EIF_STR: &str = "Sign EIF";
 const LIST_PACKAGES_STR: &str = "List Packages";
 const DOWNLOAD_KERNEL_STR: &str = "Download Kernel";
-
 /// *Nitro CLI* application entry point.
 fn main() {
     let version_str = env!("CARGO_PKG_VERSION");
