@@ -28,6 +28,16 @@ vsock = "0.5"
 vmm-sys-util = "0.15.0"
 sha2 = "0.9.5"
 hex = "0.4"
+reqwest = { version = "0.11", features = ["blocking"] }
+flate2 = "1.0"
+semver = "1.0"
+
+# RPM repository interaction
+rpm-repository = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# Pure Rust RPM extraction
+rpm = "0.16"
 
 lazy_static = "1.4.0"
 

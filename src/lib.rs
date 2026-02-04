@@ -14,6 +14,8 @@ pub mod enclave_proc;
 pub mod enclave_proc_comm;
 /// The CLI-specific utilities module.
 pub mod utils;
+/// The module for querying RPM repositories.
+pub mod rpm_repo;
 
 use aws_nitro_enclaves_image_format::defs::eif_hasher::EifHasher;
 use aws_nitro_enclaves_image_format::utils::eif_reader::EifReader;
@@ -884,6 +886,39 @@ macro_rules! create_app {
                             .long("private-key")
                             .help("KMS key ARN or local path to developer's Eliptic Curve private key.")
                             .requires("signing-certificate"),
+                    )
+            )
+            .subcommand(
+                Command::new("list-packages")
+                    .about("List available kernel packages from Amazon Linux 2023 RPM repository")
+                    .arg(
+                        Arg::new("arch")
+                            .long("arch")
+                            .help("Architecture to query (aarch64 or x86_64)")
+                            .value_parser(["aarch64", "x86_64"])
+                            .default_value("x86_64"),
+                    )
+            )
+            .subcommand(
+                Command::new("download-kernel")
+                    .about("Download a kernel RPM from Amazon Linux 2023 RPM repository")
+                    .arg(
+                        Arg::new("arch")
+                            .long("arch")
+                            .help("Architecture to query (aarch64 or x86_64)")
+                            .value_parser(["aarch64", "x86_64"])
+                            .default_value("x86_64"),
+                    )
+                    .arg(
+                        Arg::new("version")
+                            .long("version")
+                            .help("Kernel version to download (e.g., 6.12.20). If not specified, downloads the latest version"),
+                    )
+                    .arg(
+                        Arg::new("output-dir")
+                            .long("output-dir")
+                            .help("Directory to save the downloaded RPM")
+                            .default_value("."),
                     )
             )
     };
