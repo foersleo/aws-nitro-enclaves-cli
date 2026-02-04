@@ -67,12 +67,15 @@ pub fn build_enclaves(args: BuildEnclavesArgs) -> NitroCliResult<()> {
         &args.img_name,
         &args.img_version,
         &args.metadata,
+        args.use_al_kernel,
+        &args.kernel_version,
     )
     .map_err(|e| e.add_subaction("Failed to build EIF from docker".to_string()))?;
     Ok(())
 }
 
 /// Build an enclave image file from a Docker image.
+#[allow(clippy::too_many_arguments)]
 pub fn build_from_docker(
     docker_uri: &str,
     docker_dir: &Option<String>,
@@ -82,9 +85,107 @@ pub fn build_from_docker(
     img_name: &Option<String>,
     img_version: &Option<String>,
     metadata_path: &Option<String>,
+    use_al_kernel: bool,
+    kernel_version: &Option<String>,
 ) -> NitroCliResult<(File, BTreeMap<String, String>)> {
     let blobs_path =
         blobs_path().map_err(|e| e.add_subaction("Failed to retrieve blobs path".to_string()))?;
+
+    // Determine architecture
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "aarch64",
+        "x86_64" => "x86_64",
+        _ => {
+            return Err(new_nitro_cli_failure!(
+                "Unsupported architecture",
+                NitroCliErrorEnum::EifBuildingError
+            ))
+        }
+    };
+
+    // Variables for kernel and modules
+    let kernel_path: String;
+    let config_path: String;
+    let modules: Vec<enclave_build::ModuleEntry>;
+    let _temp_dir: Option<tempfile::TempDir>; // Keep temp dir alive
+
+    if use_al_kernel {
+        eprintln!("Using kernel from Amazon Linux 2023 repository...");
+
+        // Create a temporary directory for kernel extraction
+        let temp_dir = tempfile::TempDir::new().map_err(|e| {
+            new_nitro_cli_failure!(
+                &format!("Failed to create temporary directory: {e:?}"),
+                NitroCliErrorEnum::FileOperationFailure
+            )
+        })?;
+        let temp_path = temp_dir.path();
+
+        // Download the kernel RPM
+        eprintln!("Downloading kernel RPM...");
+        let rpm_path = rpm_repo::download_kernel(
+            arch,
+            kernel_version.as_deref(),
+            temp_path.to_str().unwrap(),
+        )
+        .map_err(|e| {
+            e.add_subaction("Failed to download kernel from AL repository".to_string())
+        })?;
+
+        eprintln!("Downloaded: {}", rpm_path.display());
+
+        // Extract kernel binaries and modules
+        eprintln!("Extracting kernel binaries and modules...");
+        let extract_dir = temp_path.join("extracted");
+        let extract_info =
+            kernel_extract::extract_kernel_binaries(&rpm_path, &extract_dir, arch).map_err(
+                |e| e.add_subaction("Failed to extract kernel binaries".to_string()),
+            )?;
+
+        // Set kernel and config paths
+        kernel_path = extract_info.kernel_image.to_str().unwrap().to_string();
+        config_path = extract_info.kernel_config.to_str().unwrap().to_string();
+
+        // Convert extracted modules to ModuleEntry
+        modules = extract_info
+            .modules
+            .into_iter()
+            .map(|m| enclave_build::ModuleEntry {
+                name: m.name,
+                path: m.path,
+                dependencies: m.dependencies,
+            })
+            .collect();
+
+        eprintln!(
+            "Using kernel: {}",
+            extract_info.kernel_image.file_name().unwrap().to_str().unwrap()
+        );
+        eprintln!("Modules to include: {}", modules.len());
+
+        _temp_dir = Some(temp_dir);
+    } else {
+        // Use bundled blobs
+        let kernel_image_name = match arch {
+            "aarch64" => "Image",
+            "x86_64" => "bzImage",
+            _ => "undefined",
+        };
+
+        kernel_path = format!("{blobs_path}/{kernel_image_name}");
+        config_path = format!("{kernel_path}.config");
+
+        // Use only nsm.ko from blobs
+        modules = vec![enclave_build::ModuleEntry {
+            name: String::from("nsm"),
+            path: std::path::PathBuf::from(format!("{blobs_path}/nsm.ko")),
+            dependencies: vec![],
+        }];
+
+        _temp_dir = None;
+    }
+
+    // Read kernel command line
     let cmdline_file_path = format!("{blobs_path}/cmdline");
     let mut cmdline_file = File::open(cmdline_file_path.clone()).map_err(|e| {
         new_nitro_cli_failure!(
@@ -117,14 +218,7 @@ pub fn build_from_docker(
             .add_info(vec![output_path, "Open"])
         })?;
 
-    let kernel_image_name = match std::env::consts::ARCH {
-        "aarch64" => "Image",
-        "x86_64" => "bzImage",
-        _ => "undefined",
-    };
-
-    let kernel_path = format!("{blobs_path}/{kernel_image_name}");
-    let build_info = generate_build_info!(&format!("{kernel_path}.config")).map_err(|e| {
+    let build_info = generate_build_info!(&config_path).map_err(|e| {
         new_nitro_cli_failure!(
             &format!("Could not generate build info: {e:?}"),
             NitroCliErrorEnum::EifBuildingError
@@ -134,11 +228,7 @@ pub fn build_from_docker(
     let mut docker2eif = enclave_build::Docker2Eif::new(
         docker_uri.to_string(),
         format!("{blobs_path}/init"),
-        vec![enclave_build::ModuleEntry {
-            name: String::from("nsm"),
-            path: std::path::PathBuf::from(format!("{blobs_path}/nsm.ko")),
-            dependencies: vec![],
-        }],
+        modules,
         kernel_path,
         cmdline.trim().to_string(),
         format!("{blobs_path}/linuxkit"),
@@ -796,6 +886,18 @@ macro_rules! create_app {
                         Arg::new("metadata")
                             .long("metadata")
                             .help("Path to JSON containing the custom metadata provided by the user."),
+                    )
+                    .arg(
+                        Arg::new("use-al-kernel")
+                            .long("use-al-kernel")
+                            .help("Use kernel from Amazon Linux 2023 repository instead of bundled blobs")
+                            .action(clap::ArgAction::SetTrue),
+                    )
+                    .arg(
+                        Arg::new("kernel-version")
+                            .long("kernel-version")
+                            .help("Specific kernel version to use from AL repo (requires --use-al-kernel, defaults to latest)")
+                            .requires("use-al-kernel"),
                     ),
             )
             .subcommand(

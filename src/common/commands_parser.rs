@@ -114,6 +114,10 @@ pub struct BuildEnclavesArgs {
     pub img_version: Option<String>,
     /// The path to custom metadata JSON file
     pub metadata: Option<String>,
+    /// Use kernel from Amazon Linux repository instead of bundled blobs
+    pub use_al_kernel: bool,
+    /// Specific kernel version to use from AL repo (None for latest)
+    pub kernel_version: Option<String>,
 }
 
 impl BuildEnclavesArgs {
@@ -140,6 +144,8 @@ impl BuildEnclavesArgs {
             img_name: parse_image_name(args),
             img_version: parse_image_version(args),
             metadata: parse_metadata(args),
+            use_al_kernel: args.get_flag("use-al-kernel"),
+            kernel_version: args.get_one::<String>("kernel-version").map(String::from),
         })
     }
 }
