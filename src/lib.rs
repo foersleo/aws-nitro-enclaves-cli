@@ -69,6 +69,7 @@ pub fn build_enclaves(args: BuildEnclavesArgs) -> NitroCliResult<()> {
         &args.metadata,
         args.use_al_kernel,
         &args.kernel_version,
+        &args.kernel_rpm_path,
     )
     .map_err(|e| e.add_subaction("Failed to build EIF from docker".to_string()))?;
     Ok(())
@@ -87,6 +88,7 @@ pub fn build_from_docker(
     metadata_path: &Option<String>,
     use_al_kernel: bool,
     kernel_version: &Option<String>,
+    kernel_rpm_path: &Option<String>,
 ) -> NitroCliResult<(File, BTreeMap<String, String>)> {
     let blobs_path =
         blobs_path().map_err(|e| e.add_subaction("Failed to retrieve blobs path".to_string()))?;
@@ -109,9 +111,7 @@ pub fn build_from_docker(
     let modules: Vec<enclave_build::ModuleEntry>;
     let _temp_dir: Option<tempfile::TempDir>; // Keep temp dir alive
 
-    if use_al_kernel {
-        eprintln!("Using kernel from Amazon Linux 2023 repository...");
-
+    if use_al_kernel || kernel_rpm_path.is_some() {
         // Create a temporary directory for kernel extraction
         let temp_dir = tempfile::TempDir::new().map_err(|e| {
             new_nitro_cli_failure!(
@@ -121,18 +121,31 @@ pub fn build_from_docker(
         })?;
         let temp_path = temp_dir.path();
 
-        // Download the kernel RPM
-        eprintln!("Downloading kernel RPM...");
-        let rpm_path = rpm_repo::download_kernel(
-            arch,
-            kernel_version.as_deref(),
-            temp_path.to_str().unwrap(),
-        )
-        .map_err(|e| {
-            e.add_subaction("Failed to download kernel from AL repository".to_string())
-        })?;
-
-        eprintln!("Downloaded: {}", rpm_path.display());
+        // Get the kernel RPM path - either from local file or download from repo
+        let rpm_path = if let Some(local_rpm) = kernel_rpm_path {
+            eprintln!("Using local kernel RPM: {local_rpm}");
+            let local_path = std::path::PathBuf::from(local_rpm);
+            if !local_path.exists() {
+                return Err(new_nitro_cli_failure!(
+                    &format!("Local kernel RPM not found: {local_rpm}"),
+                    NitroCliErrorEnum::FileOperationFailure
+                ));
+            }
+            local_path
+        } else {
+            eprintln!("Using kernel from Amazon Linux 2023 repository...");
+            eprintln!("Downloading kernel RPM...");
+            let downloaded = rpm_repo::download_kernel(
+                arch,
+                kernel_version.as_deref(),
+                temp_path.to_str().unwrap(),
+            )
+            .map_err(|e| {
+                e.add_subaction("Failed to download kernel from AL repository".to_string())
+            })?;
+            eprintln!("Downloaded: {}", downloaded.display());
+            downloaded
+        };
 
         // Extract kernel binaries and modules
         eprintln!("Extracting kernel binaries and modules...");
@@ -890,7 +903,7 @@ macro_rules! create_app {
                     .arg(
                         Arg::new("use-al-kernel")
                             .long("use-al-kernel")
-                            .help("Use kernel from Amazon Linux 2023 repository instead of bundled blobs")
+                            .help("Download and use kernel from Amazon Linux 2023 repository instead of bundled blobs")
                             .action(clap::ArgAction::SetTrue),
                     )
                     .arg(
@@ -898,6 +911,13 @@ macro_rules! create_app {
                             .long("kernel-version")
                             .help("Specific kernel version to use from AL repo (requires --use-al-kernel, defaults to latest)")
                             .requires("use-al-kernel"),
+                    )
+                    .arg(
+                        Arg::new("kernel-rpm-path")
+                            .long("kernel-rpm-path")
+                            .help("Path to a local kernel RPM file to use instead of bundled blobs")
+                            .conflicts_with("use-al-kernel")
+                            .conflicts_with("kernel-version"),
                     ),
             )
             .subcommand(

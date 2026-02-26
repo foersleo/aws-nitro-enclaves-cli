@@ -118,6 +118,8 @@ pub struct BuildEnclavesArgs {
     pub use_al_kernel: bool,
     /// Specific kernel version to use from AL repo (None for latest)
     pub kernel_version: Option<String>,
+    /// Path to a local kernel RPM file (alternative to downloading from repo)
+    pub kernel_rpm_path: Option<String>,
 }
 
 impl BuildEnclavesArgs {
@@ -146,6 +148,7 @@ impl BuildEnclavesArgs {
             metadata: parse_metadata(args),
             use_al_kernel: args.get_flag("use-al-kernel"),
             kernel_version: args.get_one::<String>("kernel-version").map(String::from),
+            kernel_rpm_path: args.get_one::<String>("kernel-rpm-path").map(String::from),
         })
     }
 }
